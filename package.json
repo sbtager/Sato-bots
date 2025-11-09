@@ -1,0 +1,12 @@
+{
+  "name": "sato-bot",
+  "version": "0.1.0",
+  "description": "بوت فيسبوك متعدد البوتات",
+  "main": "sato-bot.js",
+  "dependencies": {
+    "facebook-chat-api": "^1.9.0"
+  },
+  "scripts": {
+    "start": "node sato-bot.js"
+  }
+}
