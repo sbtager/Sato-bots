@@ -1,0 +1,11 @@
+{
+  "bots": [
+    {
+      "botName": "سيرو",
+      "prefix": ".",
+      "developerName": "سبيرو",
+      "developerId": "لا أعرف",
+      "sessionFile": "سيرو.json"
+    }
+  ]
+}
