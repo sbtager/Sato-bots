@@ -1,192 +1,148 @@
-/**
- * Sato Bot Engine
- * تشغيل عدة بوتات من قاعدة واحدة
- * By Al-Qaysar
- */
+// ================================
+// 🤖 Sato Bot - Main Engine
+// ================================
 
 const fs = require("fs");
 const path = require("path");
 const login = require("facebook-chat-api");
 
-// =====================
-// إعدادات عامة
-// =====================
-const BOT_DB_FILE = "bot-db.json";
-const SESSION_DIR = "Session";
-const ECONOMY_FILE = "economy.json";
-
-// =====================
-// أدوات مساعدة
-// =====================
-function log(type, msg) {
-  const time = new Date().toLocaleTimeString();
-  console.log(`[${time}] [${type}] ${msg}`);
-}
-
-function safeReadJSON(file, fallback) {
-  try {
-    if (!fs.existsSync(file)) {
-      fs.writeFileSync(file, JSON.stringify(fallback, null, 2));
-      return fallback;
-    }
-    const data = fs.readFileSync(file, "utf8");
-    if (!data.trim()) return fallback;
-    return JSON.parse(data);
-  } catch (err) {
-    log("ERROR", `JSON error in ${file}: ${err.message}`);
-    return fallback;
-  }
-}
-
-function safeWriteJSON(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
-}
-
-// =====================
-// تحميل القاعدة
-// =====================
-const botDB = safeReadJSON(BOT_DB_FILE, { bots: [] });
-
-if (!Array.isArray(botDB.bots)) {
-  log("FATAL", "bot-db.json لا يحتوي على bots[]");
+// ================================
+// 📂 تحميل قاعدة البيانات
+// ================================
+let botDB;
+try {
+  botDB = JSON.parse(fs.readFileSync("./bots-db.json", "utf8"));
+} catch (e) {
+  console.error("❌ فشل قراءة bots-db.json");
   process.exit(1);
 }
 
-log("OK", `تم تحميل ${botDB.bots.length} بوت/بوتات`);
+// ================================
+// ⚙️ إعدادات البوت
+// ================================
+const BOT_NAME = botDB.botName || "Sato";
+const PREFIX = botDB.prefix || ".";
+const DEV_ID = botDB.devId || ".."; // .. = أي شخص
+const DEV_NAME = botDB.devName || "مطور غير معروف";
 
-// =====================
-// تحميل الاقتصاد
-// =====================
-const economy = safeReadJSON(ECONOMY_FILE, {});
+let BOT_STARTED = false;
 
-// =====================
-// تشغيل كل بوت
-// =====================
-botDB.bots.forEach((bot, index) => {
-  startBot(bot, index);
+// ================================
+// 📌 جُمل ساخرة للأوامر غير الموجودة
+// ================================
+const sarcasticReplies = [
+  "❌ الأمر غير موجود، مثل تركيزك.",
+  "🤡 هذا ليس أمرًا… جرّب مرة أخرى.",
+  "🧠 الأمر فارغ مثل رأسك.",
+  "🙃 حتى أنا لم أفهم ماذا تريد.",
+  "🚫 لا يوجد أمر بهذا الاسم يا عبقري."
+];
+
+// ================================
+// 📂 تحميل الأوامر
+// ================================
+const commands = new Map();
+const commandsPath = path.join(__dirname, "Sato-command");
+
+fs.readdirSync(commandsPath).forEach(file => {
+  if (!file.endsWith(".js")) return;
+  const cmdName = file.replace(".js", "");
+  commands.set(cmdName, require(`./Sato-command/${file}`));
 });
 
-// =====================
-// دالة تشغيل بوت واحد
-// =====================
-function startBot(bot, index) {
-  const {
-    botName,
-    prefix = ".",
-    developerName,
-    developerId,
-    sessionFile
-  } = bot;
+// ================================
+// 🔐 تحميل appState أو cookies
+// ================================
+let appState;
+try {
+  appState = JSON.parse(
+    fs.readFileSync(`./Sessions/${botDB.sessionFile}`, "utf8")
+  );
+} catch {
+  console.error("❌ فشل تحميل appState");
+  process.exit(1);
+}
 
-  if (!botName || !sessionFile) {
-    log("SKIP", `بوت رقم ${index} ناقص معلومات`);
+// ================================
+// 🚀 تسجيل الدخول
+// ================================
+login({ appState }, (err, api) => {
+  if (err) {
+    console.error("❌ فشل تسجيل الدخول");
     return;
   }
 
-  const sessionPath = path.join(SESSION_DIR, sessionFile);
+  console.log("✅ تم تسجيل الدخول");
 
-  if (!fs.existsSync(sessionPath)) {
-    log("ERROR", `Session غير موجود للبوت ${botName}`);
-    return;
-  }
+  api.setOptions({ listenEvents: true });
 
-  let appState;
-  try {
-    appState = JSON.parse(fs.readFileSync(sessionPath, "utf8"));
-  } catch (e) {
-    log("ERROR", `appState تالف للبوت ${botName}`);
-    return;
-  }
+  api.listenMqtt(async (err, event) => {
+    if (err) return;
 
-  log("START", `تشغيل البوت: ${botName}`);
+    if (!event.body || !event.body.startsWith(PREFIX)) return;
 
-  login({ appState }, (err, api) => {
-    if (err) {
-      log("LOGIN_FAIL", `${botName}: ${err.error || err}`);
+    const body = event.body.slice(PREFIX.length).trim();
+    const commandName = body.split(" ")[0];
+
+    // ================================
+    // ⛔ منع الأوامر قبل التشغيل
+    // ================================
+    if (!BOT_STARTED && commandName !== "تشغيل") {
       return;
     }
 
-    api.setOptions({
-      listenEvents: true,
-      selfListen: false
-    });
-
-    log("ONLINE", `${botName} متصل`);
-
-    api.listenMqtt((err, event) => {
-      if (err) return;
-
-      if (event.type !== "message" || !event.body) return;
-
-      const body = event.body.trim();
-      const threadID = event.threadID;
-      const senderID = event.senderID;
-
-      // =====================
-      // أمر الأوامر
-      // =====================
-      if (body === prefix + "اوامر") {
-        api.sendMessage(
-`✨ أوامـر ${botName} ✨
-
-🔹 أوامر عامة
-• ${prefix}اوامر
-• ${prefix}المطور
-
-🔹 أوامر ترفيه
-• ${prefix}زوجني
-• ${prefix}صفع
-
-🔹 أوامر إقتصاد
-• ${prefix}رصيد
-• ${prefix}عمل
-
-────────────────
-المطور: ${developerName}
-`, threadID);
+    // ================================
+    // ▶️ تشغيل البوت
+    // ================================
+    if (commandName === "تشغيل") {
+      if (DEV_ID !== ".." && event.senderID !== DEV_ID) {
+        api.sendMessage("❌ هذا الأمر خاص بالمطور", event.threadID);
         return;
       }
 
-      // =====================
-      // المطور
-      // =====================
-      if (body === prefix + "المطور") {
-        api.sendMessage(
-`👤 المطور
-${developerName}
-ID: ${developerId}`, threadID);
-        return;
-      }
+      BOT_STARTED = true;
 
-      // =====================
-      // رصيد
-      // =====================
-      if (body === prefix + "رصيد") {
-        if (!economy[senderID]) {
-          economy[senderID] = { cash: 0 };
-          safeWriteJSON(ECONOMY_FILE, economy);
-        }
+      // تغيير الكنية (لا يوقف البوت إذا فشل)
+      try {
+        api.changeThreadNickname(
+          `${BOT_NAME} (${PREFIX})`,
+          event.threadID,
+          api.getCurrentUserID()
+        );
+      } catch {}
 
-        api.sendMessage(
-`💰 رصيدك: ${economy[senderID].cash}`, threadID);
-        return;
-      }
+      api.sendMessage(
+        `✅ تم التشغيل\nإصدار القالب: 0.1\nإسم البوت: ${BOT_NAME}\nاكتب ${PREFIX}اوامر لرؤية الأوامر`,
+        event.threadID
+      );
+      return;
+    }
 
-      // =====================
-      // عمل
-      // =====================
-      if (body === prefix + "عمل") {
-        if (!economy[senderID]) economy[senderID] = { cash: 0 };
+    // ================================
+    // 📦 تنفيذ الأوامر
+    // ================================
+    const command = commands.get(commandName);
 
-        const reward = Math.floor(Math.random() * 500) + 100;
-        economy[senderID].cash += reward;
-        safeWriteJSON(ECONOMY_FILE, economy);
+    if (!command) {
+      const reply =
+        sarcasticReplies[Math.floor(Math.random() * sarcasticReplies.length)];
+      api.sendMessage(reply, event.threadID);
+      return;
+    }
 
-        api.sendMessage(
-`💼 عملت وربحت ${reward}`, threadID);
-        return;
-      }
-
-    });
+    try {
+      await command({
+        api,
+        event,
+        BOT_NAME,
+        PREFIX,
+        DEV_NAME,
+        DEV_ID,
+        botDB
+      });
+    } catch (e) {
+      api.sendMessage("⚠️ حدث خطأ أثناء تنفيذ الأمر", event.threadID);
+      console.error(e);
+    }
   });
-}
+});
