@@ -1,9 +1,16 @@
 [
   {
-    "name": "سيرو",
+    "name": "Ø³ÙØ±Ù",
+    "prefix": ".",
+    "devName": "Ø³Ø¨ÙØ±Ù",
+    "devId": "..",
+    "session": "Sessions/Ø³ÙØ±Ù.json"
+  },
+  {
+    "name": "سوتارو",
     "prefix": ".",
     "devName": "سبيرو",
     "devId": "..",
-    "session": "Sessions/سيرو.json"
+    "session": "Sessions/سوتارو.json"
   }
 ]
