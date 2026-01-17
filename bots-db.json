@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "name": "سوتارو",
+    "prefix": ".",
+    "devName": "سبيرو",
+    "devId": "..",
+    "session": "Sessions/سوتارو.json"
+  }
+]
